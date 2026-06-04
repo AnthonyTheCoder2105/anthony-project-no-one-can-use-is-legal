@@ -3,7 +3,7 @@
 
     async function loadPets() {
         const snapshot = await window.getDocs(
-            window.collection(window.db, "contestants")
+            window.collection(window.db, "contestants_animal")
         );
 
         pets = snapshot.docs.map(doc => ({
@@ -20,7 +20,7 @@
 
     async function testFirebase() {
         const snapshot = await window.getDocs(
-            window.collection(window.db, "contestants")
+            window.collection(window.db, "contestants_animal")
         );
 
         console.log("Contestants found:", snapshot.size);
@@ -116,14 +116,14 @@
         // 🔥 SAVE TO FIREBASE
 
         await updateDoc(
-            doc(db, "contestants", winner.id),
+            doc(db, "contestants_animal", winner.id),
             {
                 rating: winner.rating
             }
         );
 
         await updateDoc(
-            doc(db, "contestants", loser.id),
+            doc(db, "contestants_animal", loser.id),
             {
                 rating: loser.rating
             }
