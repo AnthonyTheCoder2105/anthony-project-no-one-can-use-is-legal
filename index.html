@@ -1,0 +1,151 @@
+<script>
+    let pets = [];
+
+    async function loadPets() {
+        const snapshot = await window.getDocs(
+            window.collection(window.db, "contestants")
+        );
+
+        pets = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+
+        console.log("Loaded pets from Firebase:", pets);
+    }
+
+    let currentLeftPet = null;
+    let currentRightPet = null;
+    const K = 32;
+
+    async function testFirebase() {
+        const snapshot = await window.getDocs(
+            window.collection(window.db, "contestants")
+        );
+
+        console.log("Contestants found:", snapshot.size);
+    }
+
+    function pickMatchup() {
+        if (pets.length < 2) return;
+
+        let index1 = Math.floor(Math.random() * pets.length);
+        let index2 = Math.floor(Math.random() * pets.length);
+
+        while (index1 === index2) {
+            index2 = Math.floor(Math.random() * pets.length);
+        }
+
+        currentLeftPet = pets[index1];
+        currentRightPet = pets[index2];
+
+        document.getElementById("left-name").innerText =
+            currentLeftPet.name;
+        document.getElementById("left-img").src =
+            currentLeftPet.image;
+        document.getElementById("left-rating").innerText =
+            currentLeftPet.rating;
+
+        document.getElementById("right-name").innerText =
+            currentRightPet.name;
+        document.getElementById("right-img").src =
+            currentRightPet.image;
+        document.getElementById("right-rating").innerText =
+            currentRightPet.rating;
+    }
+
+    function updateLeaderboard() {
+        const tbody =
+            document.querySelector("#leaderboard tbody");
+
+        const sortedPets = [...pets].sort(
+            (a, b) => b.rating - a.rating
+        );
+
+        tbody.innerHTML = "";
+
+        sortedPets.forEach((pet, index) => {
+            tbody.innerHTML += `
+                <tr>
+                    <td>${index + 1}</td>
+                    <td>${pet.name}</td>
+                    <td>${pet.rating}</td>
+                </tr>
+            `;
+        });
+    }
+
+    async function vote(winnerSide) {
+        let winner =
+            winnerSide === 0
+                ? currentLeftPet
+                : currentRightPet;
+
+        let loser =
+            winnerSide === 0
+                ? currentRightPet
+                : currentLeftPet;
+
+        let R_W = winner.rating;
+        let R_L = loser.rating;
+
+        let E_W =
+            1 /
+            (1 +
+                Math.pow(
+                    10,
+                    (R_L - R_W) / 400
+                ));
+
+        let E_L =
+            1 /
+            (1 +
+                Math.pow(
+                    10,
+                    (R_W - R_L) / 400
+                ));
+
+        winner.rating = Math.round(
+            R_W + K * (1 - E_W)
+        );
+
+        loser.rating = Math.round(
+            R_L + K * (0 - E_L)
+        );
+
+        // 🔥 SAVE TO FIREBASE
+
+        await updateDoc(
+            doc(db, "contestants", winner.id),
+            {
+                rating: winner.rating
+            }
+        );
+
+        await updateDoc(
+            doc(db, "contestants", loser.id),
+            {
+                rating: loser.rating
+            }
+        );
+
+        await loadPets();
+
+        updateLeaderboard();
+        pickMatchup();
+    }
+
+    window.onload = async () => {
+        await loadPets();
+
+        if (pets.length < 2) {
+            console.log(
+                "Not enough contestants loaded yet"
+            );
+            return;
+        }
+
+        pickMatchup();
+        updateLeaderboard();
+    };
+</script>
