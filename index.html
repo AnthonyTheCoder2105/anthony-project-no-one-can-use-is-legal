@@ -1,151 +1,335 @@
-<script>
-    let pets = [];
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pet ELO Rating Game</title>
 
-    async function loadPets() {
-        const snapshot = await window.getDocs(
-            window.collection(window.db, "contestants_animal")
-        );
-
-        pets = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
-
-        console.log("Loaded pets from Firebase:", pets);
-    }
-
-    let currentLeftPet = null;
-    let currentRightPet = null;
-    const K = 32;
-
-    async function testFirebase() {
-        const snapshot = await window.getDocs(
-            window.collection(window.db, "contestants_animal")
-        );
-
-        console.log("Contestants found:", snapshot.size);
-    }
-
-    function pickMatchup() {
-        if (pets.length < 2) return;
-
-        let index1 = Math.floor(Math.random() * pets.length);
-        let index2 = Math.floor(Math.random() * pets.length);
-
-        while (index1 === index2) {
-            index2 = Math.floor(Math.random() * pets.length);
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 20px;
         }
 
-        currentLeftPet = pets[index1];
-        currentRightPet = pets[index2];
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+        }
 
-        document.getElementById("left-name").innerText =
-            currentLeftPet.name;
-        document.getElementById("left-img").src =
-            currentLeftPet.image;
-        document.getElementById("left-rating").innerText =
-            currentLeftPet.rating;
+        .game-container {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            flex-wrap: wrap;
+        }
 
-        document.getElementById("right-name").innerText =
-            currentRightPet.name;
-        document.getElementById("right-img").src =
-            currentRightPet.image;
-        document.getElementById("right-rating").innerText =
-            currentRightPet.rating;
-    }
+        .pet-card {
+            background: white;
+            border: 2px solid #ddd;
+            border-radius: 12px;
+            padding: 15px;
+            width: 280px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
 
-    function updateLeaderboard() {
-        const tbody =
-            document.querySelector("#leaderboard tbody");
+        .pet-card:hover {
+            transform: scale(1.03);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        }
 
-        const sortedPets = [...pets].sort(
-            (a, b) => b.rating - a.rating
-        );
+        .pet-card img {
+            width: 100%;
+            height: 250px;
+            object-fit: cover;
+            border-radius: 8px;
+        }
 
-        tbody.innerHTML = "";
+        table {
+            margin: 30px auto;
+            border-collapse: collapse;
+            width: 500px;
+            background: white;
+        }
 
-        sortedPets.forEach((pet, index) => {
-            tbody.innerHTML += `
-                <tr>
-                    <td>${index + 1}</td>
-                    <td>${pet.name}</td>
-                    <td>${pet.rating}</td>
-                </tr>
-            `;
-        });
-    }
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 10px;
+        }
 
-    async function vote(winnerSide) {
-        let winner =
-            winnerSide === 0
-                ? currentLeftPet
-                : currentRightPet;
+        th {
+            background: #f0f0f0;
+        }
+    </style>
+</head>
 
-        let loser =
-            winnerSide === 0
-                ? currentRightPet
-                : currentLeftPet;
+<body>
 
-        let R_W = winner.rating;
-        let R_L = loser.rating;
+    <h1>ISHCMC Facemash</h1>
+    <h1>Vote for the Cutest Animal!</h1>
 
-        let E_W =
-            1 /
-            (1 +
-                Math.pow(
-                    10,
-                    (R_L - R_W) / 400
-                ));
+    <div class="game-container">
 
-        let E_L =
-            1 /
-            (1 +
-                Math.pow(
-                    10,
-                    (R_W - R_L) / 400
-                ));
+        <div class="pet-card" id="left-card" onclick="vote(0)">
+            <h2 id="left-name">Loading...</h2>
+            <img id="left-img" src="" alt="Person Left">
+            <p>Rating: <span id="left-rating">1200</span></p>
+        </div>
 
-        winner.rating = Math.round(
-            R_W + K * (1 - E_W)
-        );
+        <div class="pet-card" id="right-card" onclick="vote(1)">
+            <h2 id="right-name">Loading...</h2>
+            <img id="right-img" src="" alt="Person Right">
+            <p>Rating: <span id="right-rating">1200</span></p>
+        </div>
 
-        loser.rating = Math.round(
-            R_L + K * (0 - E_L)
-        );
+    </div>
 
-        // 🔥 SAVE TO FIREBASE
+    <h2>Leaderboard</h2>
 
-        await updateDoc(
-            doc(db, "contestants_animal", winner.id),
-            {
-                rating: winner.rating
-            }
-        );
+    <table id="leaderboard">
+        <thead>
+            <tr>
+                <th>Rank</th>
+                <th>Name</th>
+                <th>ELO</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
 
-        await updateDoc(
-            doc(db, "contestants_animal", loser.id),
-            {
-                rating: loser.rating
-            }
-        );
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
 
-        await loadPets();
+        import {
+            getFirestore,
+            collection,
+            getDocs,
+            doc,
+            updateDoc
+        } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
 
-        updateLeaderboard();
-        pickMatchup();
-    }
+        const firebaseConfig = {
+            apiKey: "AIzaSyCF9TsJ7QZJYVBlI8gIwzg1JBmFiAsiu3o",
+            authDomain: "ishcmc-facemash.firebaseapp.com",
+            projectId: "ishcmc-facemash",
+            storageBucket: "ishcmc-facemash.firebasestorage.app",
+            messagingSenderId: "130127390645",
+            appId: "1:130127390645:web:41e4f32ec210fcbda75bfc",
+            measurementId: "G-MCNGG80L69"
+        };
 
-    window.onload = async () => {
-        await loadPets();
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
 
-        if (pets.length < 2) {
-            console.log(
-                "Not enough contestants loaded yet"
+        window.db = db;
+        window.collection = collection;
+        window.getDocs = getDocs;
+        window.doc = doc;
+        window.updateDoc = updateDoc;
+    </script>
+
+    <script>
+        let pets = [];
+
+        async function loadPets() {
+            const snapshot = await window.getDocs(
+                window.collection(
+                    window.db,
+                    "contestants_animal"
+                )
             );
-            return;
+
+            pets = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            console.log(
+                "Loaded pets from Firebase:",
+                pets
+            );
         }
 
-        pickMatchup();
-        updateLeaderboard();
-    };
-</script>
+        let currentLeftPet = null;
+        let currentRightPet = null;
+
+        const K = 32;
+
+        async function testFirebase() {
+            const snapshot = await window.getDocs(
+                window.collection(
+                    window.db,
+                    "contestants"
+                )
+            );
+
+            console.log(
+                "Contestants found:",
+                snapshot.size
+            );
+        }
+
+        function pickMatchup() {
+            if (pets.length < 2) return;
+
+            let index1 = Math.floor(
+                Math.random() * pets.length
+            );
+
+            let index2 = Math.floor(
+                Math.random() * pets.length
+            );
+
+            while (index1 === index2) {
+                index2 = Math.floor(
+                    Math.random() * pets.length
+                );
+            }
+
+            currentLeftPet = pets[index1];
+            currentRightPet = pets[index2];
+
+            document.getElementById(
+                "left-name"
+            ).innerText = currentLeftPet.name;
+
+            document.getElementById(
+                "left-img"
+            ).src = currentLeftPet.image;
+
+            document.getElementById(
+                "left-rating"
+            ).innerText = currentLeftPet.rating;
+
+            document.getElementById(
+                "right-name"
+            ).innerText = currentRightPet.name;
+
+            document.getElementById(
+                "right-img"
+            ).src = currentRightPet.image;
+
+            document.getElementById(
+                "right-rating"
+            ).innerText = currentRightPet.rating;
+        }
+
+        function updateLeaderboard() {
+            const tbody =
+                document.querySelector(
+                    "#leaderboard tbody"
+                );
+
+            const sortedPets = [...pets].sort(
+                (a, b) => b.rating - a.rating
+            );
+
+            tbody.innerHTML = "";
+
+            sortedPets.forEach(
+                (pet, index) => {
+                    tbody.innerHTML += `
+                        <tr>
+                            <td>${index + 1}</td>
+                            <td>${pet.name}</td>
+                            <td>${pet.rating}</td>
+                        </tr>
+                    `;
+                }
+            );
+        }
+
+        async function vote(winnerSide) {
+
+            let winner =
+                winnerSide === 0
+                    ? currentLeftPet
+                    : currentRightPet;
+
+            let loser =
+                winnerSide === 0
+                    ? currentRightPet
+                    : currentLeftPet;
+
+            let R_W = winner.rating;
+            let R_L = loser.rating;
+
+            let E_W =
+                1 /
+                (
+                    1 +
+                    Math.pow(
+                        10,
+                        (R_L - R_W) / 400
+                    )
+                );
+
+            let E_L =
+                1 /
+                (
+                    1 +
+                    Math.pow(
+                        10,
+                        (R_W - R_L) / 400
+                    )
+                );
+
+            winner.rating = Math.round(
+                R_W + K * (1 - E_W)
+            );
+
+            loser.rating = Math.round(
+                R_L + K * (0 - E_L)
+            );
+
+            await updateDoc(
+                doc(
+                    db,
+                    "contestants_animal",
+                    winner.id
+                ),
+                {
+                    rating: winner.rating
+                }
+            );
+
+            await updateDoc(
+                doc(
+                    db,
+                    "contestants_animal",
+                    loser.id
+                ),
+                {
+                    rating: loser.rating
+                }
+            );
+
+            await loadPets();
+
+            updateLeaderboard();
+            pickMatchup();
+        }
+
+        window.onload = async () => {
+
+            await loadPets();
+
+            if (pets.length < 2) {
+                console.log(
+                    "Not enough contestants loaded yet"
+                );
+                return;
+            }
+
+            pickMatchup();
+            updateLeaderboard();
+        };
+    </script>
+
+</body>
+</html>
